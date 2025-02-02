@@ -1,0 +1,69 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+    function isInstructor() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'instructor';
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Profile images
+    match /profile-images/{userId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isOwner(userId) &&
+        request.resource.size < 5 * 1024 * 1024 && // 5MB max
+        request.resource.contentType.matches('image/.*');
+    }
+
+    // Video uploads
+    match /videos/{instructorId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isInstructor() && 
+        isOwner(instructorId) &&
+        request.resource.size < 500 * 1024 * 1024 && // 500MB max
+        request.resource.contentType.matches('video/.*');
+      allow delete: if isAuthenticated() && isInstructor() && 
+        isOwner(instructorId);
+    }
+
+    // Video thumbnails
+    match /thumbnails/{instructorId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isInstructor() && 
+        isOwner(instructorId) &&
+        request.resource.size < 2 * 1024 * 1024 && // 2MB max
+        request.resource.contentType.matches('image/.*');
+      allow delete: if isAuthenticated() && isInstructor() && 
+        isOwner(instructorId);
+    }
+
+    // Progress media (before/after photos, form check videos)
+    match /progress-media/{userId}/{fileName} {
+      allow read: if isAuthenticated() && (
+        isOwner(userId) ||
+        isInstructor()
+      );
+      allow create: if isAuthenticated() && (
+        isOwner(userId) ||
+        isInstructor()
+      ) &&
+        request.resource.size < 50 * 1024 * 1024 && // 50MB max
+        (
+          request.resource.contentType.matches('image/.*') ||
+          request.resource.contentType.matches('video/.*')
+        );
+      allow delete: if isAuthenticated() && (
+        isOwner(userId) ||
+        isInstructor()
+      );
+    }
+  }
+}

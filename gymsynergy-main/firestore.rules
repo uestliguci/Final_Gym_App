@@ -1,0 +1,184 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isInstructor() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'instructor';
+    }
+
+    function isClient() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'client';
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // Allow create for new user registration
+      allow create: if request.auth != null && request.auth.uid == userId && (
+        request.resource.data.role == 'client' || request.resource.data.role == 'instructor'
+      );
+      allow update: if isAuthenticated() && isOwner(userId);
+      allow delete: if false; // Prevent user deletion for data integrity
+    }
+
+    // Videos collection
+    match /videos/{videoId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isInstructor();
+      allow update: if isAuthenticated() && isInstructor() && 
+        resource.data.instructorId == request.auth.uid;
+      allow delete: if isAuthenticated() && isInstructor() && 
+        resource.data.instructorId == request.auth.uid;
+    }
+
+    // Schedules collection
+    match /schedules/{scheduleId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        (isInstructor() && request.resource.data.instructorId == request.auth.uid) ||
+        (isClient() && request.resource.data.clientId == request.auth.uid)
+      );
+      allow update: if isAuthenticated() && (
+        (isInstructor() && resource.data.instructorId == request.auth.uid) ||
+        (isClient() && resource.data.clientId == request.auth.uid)
+      );
+      allow delete: if isAuthenticated() && (
+        (isInstructor() && resource.data.instructorId == request.auth.uid) ||
+        (isClient() && resource.data.clientId == request.auth.uid && 
+          resource.data.status == 'booked')
+      );
+    }
+
+    // Progress collection
+    match /progress/{progressId} {
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.userId) ||
+        (isInstructor() && resource.data.instructorId == request.auth.uid)
+      );
+      allow create: if isAuthenticated() && (
+        isOwner(request.resource.data.userId) ||
+        (isInstructor() && request.resource.data.instructorId == request.auth.uid)
+      );
+      allow update: if isAuthenticated() && (
+        isOwner(resource.data.userId) ||
+        (isInstructor() && resource.data.instructorId == request.auth.uid)
+      );
+      allow delete: if isAuthenticated() && (
+        isOwner(resource.data.userId) ||
+        (isInstructor() && resource.data.instructorId == request.auth.uid)
+      );
+    }
+
+    // Settings collection (user-specific settings)
+    match /settings/{userId} {
+      allow read: if isAuthenticated() && isOwner(userId);
+      allow write: if isAuthenticated() && isOwner(userId);
+    }
+
+    // Workout plans collection
+    match /workout_plans/{planId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isInstructor();
+      allow update: if isAuthenticated() && isInstructor() && 
+        resource.data.instructorId == request.auth.uid;
+      allow delete: if isAuthenticated() && isInstructor() && 
+        resource.data.instructorId == request.auth.uid;
+    }
+
+    // Workout guides collection
+    match /workout_guides/{guideId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isInstructor();
+      allow update, delete: if isAuthenticated() && isInstructor() && 
+        get(/databases/$(database)/documents/workout_plans/$(resource.data.workoutPlanId)).data.instructorId == request.auth.uid;
+    }
+
+    // Subscription plans collection
+    match /subscription_plans/{planId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only admins can modify subscription plans
+    }
+
+    // User subscriptions collection
+    match /user_subscriptions/{subscriptionId} {
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.userId) ||
+        (isInstructor() && resource.data.instructorId == request.auth.uid)
+      );
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+      allow update: if isAuthenticated() && (
+        isOwner(resource.data.userId) ||
+        (isInstructor() && resource.data.instructorId == request.auth.uid)
+      );
+      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    // Instructor fees collection
+    match /instructor_fees/{instructorId} {
+      allow read: if isAuthenticated() && (
+        isOwner(instructorId) ||
+        isClient()
+      );
+      allow write: if isAuthenticated() && isOwner(instructorId);
+    }
+
+    // User workout plans collection
+    match /user_workout_plans/{planId} {
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.userId) ||
+        (isInstructor() && get(/databases/$(database)/documents/workout_plans/$(resource.data.workoutPlanId)).data.instructorId == request.auth.uid)
+      );
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+      allow update: if isAuthenticated() && (
+        isOwner(resource.data.userId) ||
+        (isInstructor() && get(/databases/$(database)/documents/workout_plans/$(resource.data.workoutPlanId)).data.instructorId == request.auth.uid)
+      );
+      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    // Workout plan reviews collection
+    match /workout_plan_reviews/{reviewId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isClient();
+      allow update, delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    // Forum posts collection
+    match /forum_posts/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && isOwner(resource.data.authorId);
+      allow delete: if isAuthenticated() && (
+        isOwner(resource.data.authorId) || 
+        resource.data.authorId == request.auth.uid
+      );
+    }
+
+    // Forum post likes collection
+    match /forum_post_likes/{likeId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow delete: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    // Forum comments collection
+    match /forum_comments/{commentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && isOwner(resource.data.authorId);
+      allow delete: if isAuthenticated() && (
+        isOwner(resource.data.authorId) || 
+        resource.data.authorId == request.auth.uid
+      );
+    }
+  }
+}

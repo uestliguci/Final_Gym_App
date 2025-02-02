@@ -1,0 +1,3 @@
+-- Create database
+DROP DATABASE IF EXISTS gym;
+CREATE DATABASE gym;
